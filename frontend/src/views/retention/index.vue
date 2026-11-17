@@ -24,6 +24,13 @@
       </span>
     </p>
 
+    <div class="frozen-strip">
+      <span>当前冻结快照：{{ frozen.snapshot?.code ?? '尚未发布' }}</span>
+      <span>回访曲线：{{ frozen.snapshot ? curveSummary(frozen.snapshot.curve) : '—' }}</span>
+      <span>回访周期：{{ frozen.snapshot ? `${frozen.snapshot.cycleDays} 天` : '—' }}</span>
+      <span>粘性指数：{{ frozen.snapshot?.stickinessIndex ?? '—' }}</span>
+    </div>
+
     <form class="filter-bar" @submit.prevent="reload">
       <label v-for="field in filterFields" :key="field" class="filter-item">
         <span>{{ field }}</span>
@@ -67,11 +74,13 @@
       <span>共 {{ total }} 条回访分析记录</span>
       <span v-if="errorMessage" class="error-text">{{ errorMessage }}</span>
     </footer>
+
+    <RetentionSnapshotFlow surface="retention" @changed="onSnapshotChanged" />
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 
 import {
   downloadEntries,
@@ -79,6 +88,8 @@ import {
   moduleMeta,
   runAction as applyAction,
 } from '@/api/local-service'
+import { retentionSnapshotView } from '@/api/snapshot-service'
+import RetentionSnapshotFlow from '@/components/RetentionSnapshotFlow.vue'
 import type { EntryRow } from '@/data/types'
 
 const meta = moduleMeta('retention')
@@ -99,9 +110,25 @@ const statusSummary = computed(() =>
   })),
 )
 
+// 列表上方先显示当前冻结快照的指标：页面刷新后曲线、周期和粘性指数都以快照为准。
+const frozen = ref<ReturnType<typeof retentionSnapshotView>>({ snapshot: null, missing: false, checks: [] })
+
+// 本地数据是同步的：setup 阶段就载入，首屏即显示冻结指标，刷新后也先读快照。
+reload()
+refreshFrozen()
+
 function resetFilters() {
   filters.value = {}
   reload()
+}
+
+function curveSummary(curve: { day: number; retentionRate: number }[]): string {
+  return [1, 3, 7, 14]
+    .map((day) => {
+      const point = curve.find((item) => item.day === day)
+      return point ? `D${day} ${(point.retentionRate * 100).toFixed(1)}%` : `D${day} —`
+    })
+    .join(' / ')
 }
 
 function exportRows() {
@@ -133,5 +160,18 @@ function reload() {
   }
 }
 
-onMounted(reload)
+// 快照发布后重新算一次冻结指标，避免页面还显示发布前的曲线。
+function refreshFrozen() {
+  frozen.value = retentionSnapshotView()
+}
+
+function onSnapshotChanged() {
+  reload()
+  refreshFrozen()
+}
+
+// 本地数据是同步的：setup 阶段就载入，首屏即显示冻结指标，刷新后也先读快照。
+reload()
+refreshFrozen()
+
 </script>

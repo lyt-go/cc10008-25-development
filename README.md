@@ -61,6 +61,25 @@ npm run build
 | 数据视图 | `dataview` | 分析视图 | 视图编号、视图名称、数据源组合 |
 | 参数字典 | `paramdef` | 参数定义 | 参数编号、参数名称、参数类型 |
 
+## 回访分析视图数据快照
+
+回访分析与数据视图共用一份「回访分析视图数据快照」：把待处理所读取的回访模式与全部分析视图
+按同一业务版本（`BV-xxxxxxxx`，由两份业务数据的字段与状态哈希得出）聚合成冻结曲线，回访页和
+数据视图页只读这份冻结版本，不再各自读实时行。
+
+- 发布入口在回访页与数据视图页底部的「回访视图快照」面板（同一个组件，`data-surface` 区分业务面）。
+  两个页面共用 `frontend/src/components/RetentionSnapshotFlow.vue` 和 `frontend/src/api/snapshot-service.ts`。
+- 快照单独存 `localStorage` 的 `behavior-event-trace-hub:retention-snapshots`，发布后只读；历史快照
+  保留为 `superseded`，通过 `?snapshot=RVS-xxxx` 分享链接仍可追溯到当时的曲线。
+- 同一业务版本只保留一个当前快照。两个发布者同时保存同一回访结果时，第二份请求收到只读冲突回执
+  （`CONF-xxxx`）；重复提交同样按冲突处理，不会新建第二个快照。
+- 仲裁策略二选一，共同底线是分享链接只读一份可追溯的冻结快照：
+  - **所有者优先**（默认）：所有者版本胜出，协作者的迟到保存落隔离单（`ISOL-xxxx`），不进入快照。
+  - **完成时间优先**：较晚完成的保存成为当前快照，同时给所有者生成复核清单（`CHKL-xxxx`）。
+- 数据视图清单的「回访模式 / 回访曲线 / 回访周期 / 粘性指数 / 回访视图快照来源 / 快照冻结状态」六列
+  来自快照；快照创建之后新建的分析视图会标「未纳入该快照」，不借用旧指标。
+- 回到初始状态：清掉 `behavior-event-trace-hub:entries` 与 `behavior-event-trace-hub:retention-snapshots` 两项。
+
 ## 约定
 
 - 每个模块的页面在 `frontend/src/views/<模块>/index.vue`，页面只负责渲染，读写统一走
@@ -68,6 +87,7 @@ npm run build
 - 字段、状态、动作与流转目标集中在 `frontend/src/data/modules.ts`；示例数据在
   `frontend/src/data/seed.ts`。
 - 状态流转只允许在 `local-service.ts` 里改，页面组件不做业务判断。
+- 快照发布与仲裁只允许在 `snapshot-service.ts` 里改，页面组件不做冲突判断。
 - 想回到初始数据：清掉浏览器里 `behavior-event-trace-hub:entries` 这一项，或调用 `resetModule(模块)`。
 
 领域：数据工程
